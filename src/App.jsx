@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { products } from "./data/Product";
 import Header from "./components/Header";
 import HomePage from "./components/HomePage";
 import MenuPage from "./components/MenuPage";
 import CartDrawer from "./components/CartDrawer";
 import ProductDetailModal from "./components/ProductDetailModal";
 import CheckoutPage from "./components/CheckoutPage"
+import { supabase } from "./supabaseClient";
+
 
 function App() {
   const [page, setPage] = useState("home");
@@ -13,7 +14,22 @@ function App() {
   const [cart, setCart] = useState({});
   const [cartOpen, setCartOpen] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
+  const [productsList, setProductsList] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    async function fetchProducts() {
+      const { data, error } = await supabase.from('products').select('*');
+      if (error) {
+        console.error("Error fetching products:", error);
+      } else {
+        setProductsList(data);
+      }
+      setLoading(false);
+    }
+
+    fetchProducts();
+  }, []);
 
 const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
@@ -37,7 +53,8 @@ useEffect(() => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
   // ===== Cart Logic =====
-  const addToCart = (id) => setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+const addToCart = (id) => setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+  
   const removeFromCart = (id) =>
     setCart((prev) => {
       const next = { ...prev };
@@ -49,11 +66,28 @@ useEffect(() => {
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
 
-  const handlePlaceOrder = () => {
-    setCart({});
-    setPage("home");
-  };
+  const handlePlaceOrder = async (orderDetails) => {
+    try {
+      const { data, error } = await supabase.from("orders").insert([
+        {
+          customer_name: orderDetails?.name || "Guest",
+          mobile: orderDetails?.phone || "N/A",
+          address: orderDetails?.address || "N/A",
+          total_amount: orderDetails?.total || 0,
+          items: cart,
+        },
+      ]);
 
+      if (error) throw error;
+
+      // alert("🎉 Order kamyabi se Supabase mein save ho gaya!");
+      setCart({});
+      setPage("home");
+    } catch (error) {
+      console.error("Order error:", error.message);
+      alert("Order place karne mein issue aaya: " + error.message);
+    }
+  };
   const goToMenu = () => {
     setJumpCategory(null);
     setPage("menu");
@@ -76,6 +110,7 @@ useEffect(() => {
 
       {page === "home" && (
         <HomePage
+          products={productsList}        
           cart={cart}
           onAdd={addToCart}
           onRemove={removeFromCart}
@@ -87,18 +122,19 @@ useEffect(() => {
 
       {page === "menu" && (
         <MenuPage
+          products={productsList}        
           cart={cart}
           onAdd={addToCart}
           onRemove={removeFromCart}
           initialCategory={jumpCategory}
           onOpenDetail={setDetailProduct}
         />
-      )}
+      )}  
 
       {page === "checkout" && (
         <CheckoutPage
           cart={cart}
-          products={products}
+          products={productsList}
           onAdd={addToCart}
           onRemove={removeFromCart}
           goToMenu={goToMenu}
@@ -116,7 +152,7 @@ useEffect(() => {
         open={cartOpen}
         onClose={() => setCartOpen(false)}
         cart={cart}
-        products={products}
+        products={productsList}
         onAdd={addToCart}
         onRemove={removeFromCart}
         onCheckout={() => setPage("checkout")}

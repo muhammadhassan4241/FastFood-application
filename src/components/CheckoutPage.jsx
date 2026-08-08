@@ -26,9 +26,18 @@ function CheckoutPage({ cart, products, onAdd, onRemove, goToMenu, onPlaceOrder 
 
   const handlePlaceOrder = () => {
     if (!canPlaceOrder) return;
+    
     setPlaced(true);
     setTimeout(() => {
-      onPlaceOrder();
+      onPlaceOrder({
+        name: name,
+        phone: phone,
+        address: address,
+        total: grandTotal,
+        email: email,
+        instructions: instructions,
+        payment: payment
+      });
     }, 1800);
   };
 
