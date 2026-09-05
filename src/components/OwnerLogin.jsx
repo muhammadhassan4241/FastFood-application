@@ -1,10 +1,24 @@
 import { useState } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  ShieldCheck,
+  Sparkles,
+  Store,
+  TrendingUp,
+  ChefHat,
+  Receipt,
+  AlertCircle,
+} from "lucide-react";
 import { supabase } from "../supabaseClient";
 
 const OWNER_EMAIL = "muhammadhassanattari450@gmail.com";
 
-function OwnerLogin({ onLoggedIn }) {
+function OwnerLogin({ onLoggedIn, onBack }) {
   const [email, setEmail] = useState("muhammadhassanattari450@gmail.com");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -13,38 +27,264 @@ function OwnerLogin({ onLoggedIn }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!email.trim() || !password) {
+      setError("Please enter both email address and password.");
+      return;
+    }
+
     setLoading(true);
     setError("");
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (authError) setError(authError.message);
-    else if (data.user?.email?.toLowerCase() !== OWNER_EMAIL) {
-      await supabase.auth.signOut();
-      setError("This account is not authorized for the Food World owner dashboard.");
-    } else onLoggedIn(data.user);
-    setLoading(false);
+
+    try {
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (authError) {
+        setError(authError.message || "Failed to sign in. Please check your credentials.");
+      } else if (data.user?.email?.toLowerCase() !== OWNER_EMAIL.toLowerCase()) {
+        await supabase.auth.signOut();
+        setError("This account is not authorized for the Food World Owner Portal.");
+      } else {
+        onLoggedIn(data.user);
+      }
+    } catch (err) {
+      setError(err?.message || "An unexpected network error occurred.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950 px-4 py-12 text-white">
-      <div className="pointer-events-none fixed -left-32 -top-32 h-96 w-96 rounded-full bg-orange-500/20 blur-3xl" />
-      <div className="pointer-events-none fixed -bottom-40 -right-20 h-96 w-96 rounded-full bg-amber-500/10 blur-3xl" />
-      <div className="relative grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-2xl shadow-orange-950/30 lg:grid-cols-[1fr_0.9fr]">
-        <div className="hidden flex-col justify-between bg-gradient-to-br from-orange-500 to-amber-500 p-10 text-zinc-950 lg:flex">
-          <div><div className="flex items-center gap-2 text-xl font-black">F~FOOD <span>WORLD':)</span></div><p className="mt-3 max-w-sm text-sm font-medium text-orange-950/75">Run your restaurant with clarity. Track sales, manage your catalog, and keep every order moving.</p></div>
-          <div><p className="max-w-md text-4xl font-black leading-tight">Everything your kitchen needs, in one calm workspace.</p><div className="mt-8 grid grid-cols-3 gap-3 text-xs font-bold"><div className="rounded-2xl bg-white/25 p-3">Sales<br /><span className="text-orange-950/65">Live insights</span></div><div className="rounded-2xl bg-white/25 p-3">Stock<br /><span className="text-orange-950/65">Stay ready</span></div><div className="rounded-2xl bg-white/25 p-3">Orders<br /><span className="text-orange-950/65">Move faster</span></div></div></div>
-        </div>
-        <div className="p-7 sm:p-12">
-          <div className="mb-10"><div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-xl font-black text-white">F</div><p className="text-sm font-bold uppercase tracking-[0.2em] text-orange-400">Owner access</p><h1 className="mt-2 text-3xl font-black">Welcome back.</h1><p className="mt-2 text-sm text-zinc-400">Sign in to open your Food World POS dashboard.</p></div>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <label className="block text-sm font-semibold text-zinc-300">Email address<div className="relative mt-2"><Mail className="absolute left-3 top-3.5 text-zinc-500" size={18} /><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-3 outline-none transition focus:border-orange-500" /></div></label>
-            <label className="block text-sm font-semibold text-zinc-300">Password<div className="relative mt-2"><LockKeyhole className="absolute left-3 top-3.5 text-zinc-500" size={18} /><input required minLength={6} type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-11 outline-none transition focus:border-orange-500" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3 text-zinc-500 hover:text-white">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
-            {error && <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-sm text-red-300">{error}</p>}
-            <button disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-3.5 font-bold text-white transition hover:bg-orange-400 disabled:opacity-50">{loading ? "Signing in..." : "Open dashboard"}<ArrowRight size={18} /></button>
-          </form>
-          <p className="mt-8 text-center text-xs text-zinc-500">Only authorized Food World owners can access this area.</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-x-hidden bg-zinc-950 px-4 py-8 sm:px-6 lg:px-8">
+      {/* Dynamic Ambient Background Glows */}
+      <div className="pointer-events-none fixed -left-36 -top-36 h-[32rem] w-[32rem] rounded-full bg-orange-600/20 blur-[120px]" />
+      <div className="pointer-events-none fixed -bottom-36 -right-36 h-[32rem] w-[32rem] rounded-full bg-amber-500/15 blur-[120px]" />
+      <div className="pointer-events-none fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-orange-500/5 blur-[100px]" />
+
+      {/* Main Container Card */}
+      <div className="relative z-10 w-full max-w-5xl overflow-hidden rounded-[2.5rem] border border-white/10 bg-zinc-900/70 shadow-2xl shadow-black/80 backdrop-blur-2xl transition-all">
+        <div className="grid grid-cols-1 lg:grid-cols-12">
+          {/* Left Visual / Hero Section */}
+          <div className="relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 p-8 text-white sm:p-12 lg:col-span-6">
+            {/* Background Pattern */}
+            <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
+            <div className="pointer-events-none absolute -bottom-16 -left-16 h-64 w-64 rounded-full bg-orange-950/25 blur-2xl" />
+
+            {/* Top Brand Bar */}
+            <div className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-zinc-950 font-black text-white shadow-xl">
+                    F
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight text-zinc-950">
+                      FOOD <span className="text-white">WORLD</span>
+                    </h2>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.25em] text-zinc-950/70">
+                      Enterprise POS & Kitchen OS
+                    </p>
+                  </div>
+                </div>
+
+                {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950/20 px-3.5 py-1.5 text-xs font-bold text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+                  >
+                    <Store size={14} />
+                    <span>Storefront</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Tagline */}
+              <div className="mt-8">
+                <div className="inline-flex items-center gap-2 rounded-full bg-zinc-950/20 px-3.5 py-1.5 text-[11px] font-black uppercase tracking-wider text-zinc-950 backdrop-blur-md">
+                  <Sparkles size={13} />
+                  <span>Restaurant Operations Portal</span>
+                </div>
+                <h1 className="mt-4 text-3xl font-black leading-tight tracking-tight text-zinc-950 sm:text-4xl">
+                  Powering fresh bites & real-time kitchen efficiency.
+                </h1>
+                <p className="mt-3 text-sm font-medium leading-relaxed text-zinc-950/80">
+                  Manage food & drink orders, configure menu pricing, monitor stock thresholds, and track live restaurant revenue in one unified terminal.
+                </p>
+              </div>
+            </div>
+
+            {/* Live Feature Highlights Pill Grid */}
+            <div className="relative z-10 mt-8 grid grid-cols-3 gap-3 pt-6 border-t border-zinc-950/15">
+              <div className="rounded-2xl bg-zinc-950/15 p-3 backdrop-blur-md">
+                <div className="flex items-center gap-1.5 text-zinc-950">
+                  <ChefHat size={16} />
+                  <span className="text-xs font-bold">KDS</span>
+                </div>
+                <p className="mt-1 text-[11px] font-semibold text-zinc-950/70">Live cooking queue</p>
+              </div>
+
+              <div className="rounded-2xl bg-zinc-950/15 p-3 backdrop-blur-md">
+                <div className="flex items-center gap-1.5 text-zinc-950">
+                  <TrendingUp size={16} />
+                  <span className="text-xs font-bold">Sales</span>
+                </div>
+                <p className="mt-1 text-[11px] font-semibold text-zinc-950/70">Real-time revenue</p>
+              </div>
+
+              <div className="rounded-2xl bg-zinc-950/15 p-3 backdrop-blur-md">
+                <div className="flex items-center gap-1.5 text-zinc-950">
+                  <Receipt size={16} />
+                  <span className="text-xs font-bold">POS</span>
+                </div>
+                <p className="mt-1 text-[11px] font-semibold text-zinc-950/70">Print receipts</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Form Section */}
+          <div className="flex flex-col justify-between p-6 sm:p-10 lg:col-span-6 lg:p-12">
+            <div>
+              {/* Top return link on mobile */}
+              <div className="mb-6 flex items-center justify-between lg:hidden">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-orange-500 text-sm font-black text-white">
+                    F
+                  </span>
+                  <span className="text-sm font-black text-white">
+                    FOOD <span className="text-orange-500">WORLD</span>
+                  </span>
+                </div>
+                {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-zinc-400 hover:text-orange-500"
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Back to Store</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Header */}
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1 text-xs font-bold text-orange-400">
+                  <ShieldCheck size={14} />
+                  <span>Owner Authentication</span>
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                  Sign in to Portal
+                </h2>
+                <p className="mt-1.5 text-xs text-zinc-400 sm:text-sm">
+                  Access your restaurant inventory, orders, and sales analytics.
+                </p>
+              </div>
+
+              {/* Error Message Box */}
+              {error && (
+                <div className="mt-6 flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-xs font-semibold text-red-300 animate-fade-in">
+                  <AlertCircle size={17} className="shrink-0 text-red-400" />
+                  <p className="leading-relaxed">{error}</p>
+                </div>
+              )}
+
+              {/* Login Form */}
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                {/* Email Address */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400">
+                    Owner Email
+                  </label>
+                  <div className="relative mt-1.5">
+                    <Mail
+                      size={18}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                    />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="owner@foodworld.com"
+                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-950/80 py-3.5 pl-11 pr-4 text-sm font-medium text-white outline-none transition placeholder:text-zinc-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                    />
+                  </div>
+                </div>
+
+                {/* Password with Show/Hide Toggle */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400">
+                      Password
+                    </label>
+                  </div>
+                  <div className="relative mt-1.5">
+                    <Lock
+                      size={18}
+                      className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                    />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••••••"
+                      className="w-full rounded-2xl border border-zinc-800 bg-zinc-950/80 py-3.5 pl-11 pr-11 text-sm font-medium text-white outline-none transition placeholder:text-zinc-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Action Button */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 py-4 text-sm font-black text-white shadow-xl shadow-orange-500/25 transition duration-300 hover:bg-orange-400 hover:shadow-orange-500/40 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <span>Authenticating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Open Owner Dashboard</span>
+                      <ArrowRight size={17} />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Bottom Footer & Store Return */}
+            <div className="mt-8 border-t border-zinc-800/80 pt-5 text-center text-xs text-zinc-500">
+              <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
+                <p>Protected by Food World Supabase Auth</p>
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="inline-flex items-center gap-1 font-bold text-orange-500 hover:underline"
+                  >
+                    <ArrowLeft size={13} />
+                    <span>Return to Customer Store</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 

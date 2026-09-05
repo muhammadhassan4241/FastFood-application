@@ -16,7 +16,7 @@ function ProductListing({ products, cart, onAdd, onRemove, onOpenDetail }) {
         <ProductCard
           key={product.id}
           product={product}
-          qty={cart[product.id] || 0}
+          qty={typeof cart[product.id] === "number" ? cart[product.id] : cart[product.id]?.quantity || 0}
           onAdd={() => onAdd(product.id)}
           onRemove={() => onRemove(product.id)}
           onOpenDetail={onOpenDetail}

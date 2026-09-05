@@ -7,37 +7,78 @@ import ProductDetailModal from "./components/ProductDetailModal";
 import CheckoutPage from "./components/CheckoutPage";
 import OwnerLogin from "./components/OwnerLogin";
 import OwnerDashboard from "./components/OwnerDashboard";
+import OrderTrackingPage from "./components/OrderTrackingPage";
 import { supabase } from "./supabaseClient";
+import { normalizeOrder } from "./utils/orderUtils";
+
+import { products as defaultProducts } from "./data/Product";
 
 function App() {
   const [page, setPage] = useState("home");
   const [jumpCategory, setJumpCategory] = useState(null);
+  const [trackingOrderId, setTrackingOrderId] = useState("");
   const [cart, setCart] = useState(() => {
     if (typeof window === "undefined") return {};
     try {
       return JSON.parse(localStorage.getItem("foodworld-cart") || "{}");
     } catch {
       return {};
+      return {};
     }
   });
   const [cartOpen, setCartOpen] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
-  const [productsList, setProductsList] = useState([]);
+  const [productsList, setProductsList] = useState(defaultProducts);
   const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState("");
   const [loading, setLoading] = useState(true);
   const [owner, setOwner] = useState(null);
-  const [theme, setTheme] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("theme") || "dark" : "dark"));
+  const [theme, setTheme] = useState(() =>
+    typeof window !== "undefined" ? localStorage.getItem("theme") || "dark" : "dark"
+  );
 
   const fetchProducts = async () => {
-    const { data, error } = await supabase.from("products").select("*").order("id");
-    if (error) console.error("Error fetching products:", error);
-    else setProductsList(data || []);
+    try {
+      const { data, error } = await supabase.from("products").select("*").order("id");
+      if (error) {
+        console.warn("Error fetching products from database:", error.message);
+        setProductsList(defaultProducts);
+      } else if (!data || data.length === 0) {
+        setProductsList(defaultProducts);
+      } else {
+        // If remote database doesn't yet have Drinks category, merge default drinks so storefront and POS are never missing drinks
+        const hasDrinks = data.some((p) => (p.category || "").toLowerCase() === "drinks");
+        if (!hasDrinks) {
+          const defaultDrinks = defaultProducts.filter((p) => p.category === "Drinks");
+          setProductsList([...data, ...defaultDrinks]);
+        } else {
+          setProductsList(data);
+        }
+      }
+    } catch (err) {
+      console.error("fetchProducts error:", err);
+      setProductsList(defaultProducts);
+    }
   };
 
   const fetchOrders = async () => {
-    const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (error) console.error("Error fetching orders:", error);
-    else setOrders(data || []);
+    setOrdersLoading(true);
+    setOrdersError("");
+    try {
+      const { data, error } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching orders:", error);
+        setOrdersError(error.message || "Could not fetch orders.");
+      } else {
+        setOrders(data || []);
+      }
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+      setOrdersError(error?.message || "Could not fetch orders.");
+    } finally {
+      setOrdersLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -46,11 +87,24 @@ function App() {
       await Promise.all([fetchProducts(), fetchOrders()]);
       const { data } = await supabase.auth.getSession();
       if (data.session?.user) setOwner(data.session.user);
+
+      // Check if URL contains ?tracking=FW-XXXX or ?order_id=...
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const trackParam = params.get("tracking") || params.get("order_id");
+        if (trackParam) {
+          setTrackingOrderId(trackParam);
+          setPage("tracking");
+        }
+      }
+
       setLoading(false);
     };
     load();
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setOwner(session?.user || null));
-    return () => listener.subscription.unsubscribe();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) =>
+      setOwner(session?.user || null)
+    );
+    return () => listener.subscription?.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -62,33 +116,302 @@ function App() {
     localStorage.setItem("foodworld-cart", JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (id) => setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-  const removeFromCart = (id) => setCart((prev) => { const next = { ...prev }; if (!next[id]) return prev; next[id] -= 1; if (next[id] <= 0) delete next[id]; return next; });
-  const cartCount = Object.values(cart).reduce((sum, quantity) => sum + quantity, 0);
+  const addToCart = (productIdOrKey, selectedDrink = null) => {
+    setCart((prev) => {
+      let key = String(productIdOrKey);
+      let prodId = Number(key.split("_")[0]);
+      let drink = selectedDrink;
 
-  const handlePlaceOrder = async (details) => {
-    const { error } = await supabase.from("orders").insert([{ customer_name: details?.name || "Guest", mobile: details?.phone || "N/A", address: details?.address || "N/A", total_amount: details?.total || 0, items: cart, status: "pending" }]);
-    if (error) alert(`Order place karne mein issue aaya: ${error.message}`);
-    else { setCart({}); await fetchOrders(); setPage("home"); }
+      if (!selectedDrink && key.includes("_drink_")) {
+        const drinkId = Number(key.split("_drink_")[1]);
+        drink = prev[key]?.drink || productsList.find((p) => p.id === drinkId) || null;
+      } else if (selectedDrink) {
+        key = `${prodId}_drink_${selectedDrink.id}`;
+      }
+
+      const currentItem = prev[key];
+      const currentQty = typeof currentItem === "number" ? currentItem : currentItem?.quantity || 0;
+
+      return {
+        ...prev,
+        [key]: {
+          productId: prodId,
+          quantity: currentQty + 1,
+          drink: drink || currentItem?.drink || null,
+        },
+      };
+    });
   };
 
-  const goToMenu = () => { setJumpCategory(null); setPage("menu"); };
-  const goToCategory = (category) => { setJumpCategory(category); setPage("menu"); };
-  const signOut = async () => { await supabase.auth.signOut(); setOwner(null); setPage("home"); };
+  const removeFromCart = (productIdOrKey) => {
+    setCart((prev) => {
+      const key = String(productIdOrKey);
+      const currentItem = prev[key];
+      if (!currentItem) return prev;
+      const currentQty = typeof currentItem === "number" ? currentItem : currentItem?.quantity || 0;
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-orange-500"><div className="h-10 w-10 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" /></div>;
-  if (page === "owner" && !owner) return <OwnerLogin onLoggedIn={(user) => { setOwner(user); setPage("owner"); }} />;
-  if (page === "owner" && owner) return <OwnerDashboard products={productsList} orders={orders} user={owner} onSignOut={signOut} onProductsChanged={fetchProducts} onOrdersChanged={fetchOrders} />;
+      const next = { ...prev };
+      if (currentQty <= 1) {
+        delete next[key];
+      } else {
+        next[key] = {
+          ...currentItem,
+          quantity: currentQty - 1,
+        };
+      }
+      return next;
+    });
+  };
 
-  return <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
-    <Header page={page} setPage={setPage} cartCount={cartCount} onOpenCart={() => setCartOpen(true)} theme={theme} toggleTheme={() => setTheme((prev) => prev === "dark" ? "light" : "dark")} onOwner={() => setPage("owner")} />
-    {page === "home" && <HomePage products={productsList} cart={cart} onAdd={addToCart} onRemove={removeFromCart} goToMenu={goToMenu} goToCategory={goToCategory} onOpenDetail={setDetailProduct} />}
-    {page === "menu" && <MenuPage products={productsList} cart={cart} onAdd={addToCart} onRemove={removeFromCart} initialCategory={jumpCategory} onOpenDetail={setDetailProduct} />}
-    {page === "checkout" && <CheckoutPage cart={cart} products={productsList} onAdd={addToCart} onRemove={removeFromCart} goToMenu={goToMenu} onPlaceOrder={handlePlaceOrder} />}
-    <footer className="border-t border-zinc-200 px-6 py-8 text-center dark:border-orange-500/10"><p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Food World · Fresh & Fast</p></footer>
-    <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} cart={cart} products={productsList} onAdd={addToCart} onRemove={removeFromCart} onCheckout={() => { setCartOpen(false); setPage("checkout"); }} />
-    <ProductDetailModal product={detailProduct} qty={detailProduct ? cart[detailProduct.id] || 0 : 0} onAdd={() => addToCart(detailProduct.id)} onRemove={() => removeFromCart(detailProduct.id)} onClose={() => setDetailProduct(null)} />
-  </div>;
+  const cartCount = Object.values(cart).reduce((sum, item) => {
+    const q = typeof item === "number" ? item : item?.quantity || 0;
+    return sum + q;
+  }, 0);
+
+  /**
+   * Resilient order placement that safely inserts into Supabase
+   * and clears the cart ONLY upon verified database success.
+   */
+  const handlePlaceOrder = async (details) => {
+    const richItemsContainer = {
+      order_id: details.order_id,
+      items: details.items,
+      subtotal: details.subtotal,
+      delivery_fee: details.delivery_fee,
+      tax: details.tax,
+      discount: details.discount || 0,
+      customer_email: details.customer_email || "",
+      special_instructions: details.special_instructions || "",
+      payment_method: details.payment_method || "cod",
+      customer_name: details.customer_name || "Guest",
+      mobile: details.mobile || "N/A",
+      address: details.address || "N/A",
+      total_amount: details.total_amount || 0,
+    };
+
+    // Primary payload targeting full schema
+    const fullPayload = {
+      order_id: details.order_id,
+      customer_name: details.customer_name || "Guest",
+      mobile: details.mobile || "N/A",
+      customer_phone: details.mobile || "N/A",
+      customer_email: details.customer_email || null,
+      address: details.address || "N/A",
+      special_instructions: details.special_instructions || null,
+      items: richItemsContainer,
+      subtotal: details.subtotal || 0,
+      delivery_fee: details.delivery_fee || 150,
+      tax: details.tax || 0,
+      discount: details.discount || 0,
+      total_amount: details.total_amount || 0,
+      payment_method: details.payment_method || "cod",
+      status: "pending",
+    };
+
+    // Fallback payload targeting standard base schema (no extra columns)
+    const basePayload = {
+      customer_name: details.customer_name || "Guest",
+      mobile: details.mobile || "N/A",
+      address: details.address || "N/A",
+      total_amount: details.total_amount || 0,
+      items: richItemsContainer,
+      status: "pending",
+    };
+
+    let savedData = null;
+    let insertionError = null;
+
+    // Attempt 1: Try inserting with full schema
+    const { data: d1, error: e1 } = await supabase
+      .from("orders")
+      .insert([fullPayload])
+      .select()
+      .single();
+
+    if (!e1 && d1) {
+      savedData = d1;
+    } else {
+      console.warn("Full payload insertion error, attempting base payload fallback:", e1?.message);
+      // Attempt 2: Fallback to existing columns schema (embeds order_id in items JSON)
+      const { data: d2, error: e2 } = await supabase
+        .from("orders")
+        .insert([basePayload])
+        .select()
+        .single();
+
+      if (!e2 && d2) {
+        savedData = d2;
+      } else {
+        insertionError = e2 || e1;
+      }
+    }
+
+    if (insertionError || !savedData) {
+      console.error("Order insertion failed completely:", insertionError);
+      // DO NOT clear cart on failure
+      const errorMsg = insertionError?.message || "Database insert failed";
+      throw new Error(errorMsg);
+    }
+
+    // ONLY on successful database insertion:
+    // 1. Clear cart state
+    setCart({});
+    // 2. Clear localStorage
+    localStorage.removeItem("foodworld-cart");
+    // 3. Refresh orders from database
+    await fetchOrders();
+
+    // 4. Return normalized order with the real saved database ID & human readable order_id
+    const normalized = normalizeOrder(savedData, productsList);
+    // Ensure the generated order_id from client is preserved if DB column didn't store it
+    if (!normalized.order_id || normalized.order_id === "FW-00000") {
+      normalized.order_id = details.order_id;
+    }
+
+    return normalized;
+  };
+
+  const goToMenu = () => {
+    setJumpCategory(null);
+    setPage("menu");
+  };
+
+  const goToCategory = (category) => {
+    setJumpCategory(category);
+    setPage("menu");
+  };
+
+  const goToTracking = (orderId = "") => {
+    setTrackingOrderId(orderId);
+    setPage("tracking");
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setOwner(null);
+    setPage("home");
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-orange-500">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (page === "owner" && !owner) {
+    return (
+      <OwnerLogin
+        onLoggedIn={(user) => {
+          setOwner(user);
+          setPage("owner");
+        }}
+        onBack={() => setPage("home")}
+      />
+    );
+  }
+
+  if (page === "owner" && owner) {
+    return (
+      <OwnerDashboard
+        products={productsList}
+        orders={orders}
+        ordersLoading={ordersLoading}
+        ordersError={ordersError}
+        user={owner}
+        onSignOut={signOut}
+        onProductsChanged={fetchProducts}
+        onOrdersChanged={fetchOrders}
+        onBackToStore={() => setPage("home")}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100">
+      <Header
+        page={page}
+        setPage={setPage}
+        cartCount={cartCount}
+        onOpenCart={() => setCartOpen(true)}
+        theme={theme}
+        toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+        onOwner={() => setPage("owner")}
+      />
+
+      {page === "home" && (
+        <HomePage
+          products={productsList}
+          cart={cart}
+          onAdd={addToCart}
+          onRemove={removeFromCart}
+          goToMenu={goToMenu}
+          goToCategory={goToCategory}
+          onOpenDetail={setDetailProduct}
+        />
+      )}
+
+      {page === "menu" && (
+        <MenuPage
+          products={productsList}
+          cart={cart}
+          onAdd={addToCart}
+          onRemove={removeFromCart}
+          initialCategory={jumpCategory}
+          onOpenDetail={setDetailProduct}
+        />
+      )}
+
+      {page === "checkout" && (
+        <CheckoutPage
+          cart={cart}
+          products={productsList}
+          onAdd={addToCart}
+          onRemove={removeFromCart}
+          goToMenu={goToMenu}
+          onPlaceOrder={handlePlaceOrder}
+          onGoToTracking={goToTracking}
+        />
+      )}
+
+      {page === "tracking" && (
+        <OrderTrackingPage
+          products={productsList}
+          initialOrderId={trackingOrderId}
+          goToMenu={goToMenu}
+        />
+      )}
+
+      <footer className="border-t border-zinc-200 px-6 py-8 text-center dark:border-orange-500/10">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">
+          Food World · Fresh & Fast Restaurant POS
+        </p>
+      </footer>
+
+      <CartDrawer
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        cart={cart}
+        products={productsList}
+        onAdd={addToCart}
+        onRemove={removeFromCart}
+        onCheckout={() => {
+          setCartOpen(false);
+          setPage("checkout");
+        }}
+      />
+
+      <ProductDetailModal
+        product={detailProduct}
+        products={productsList}
+        cart={cart}
+        onAdd={addToCart}
+        onRemove={removeFromCart}
+        onClose={() => setDetailProduct(null)}
+      />
+    </div>
+  );
 }
 
 export default App;
